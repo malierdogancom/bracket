@@ -126,6 +126,10 @@ export default function Home() {
         );
     };
 
+    const buildDate = process.env.NEXT_PUBLIC_BUILD_DATE
+        ? new Date(process.env.NEXT_PUBLIC_BUILD_DATE).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+        : null;
+
     return (
         <main className="flex min-h-screen bg-gray-900 text-white">
             {/* Sidebar for Desktop */}
@@ -189,6 +193,11 @@ export default function Home() {
                     )}
                 </div>
             </div>
+            {buildDate && (
+                <div className="fixed bottom-2 right-3 text-xs text-gray-600 pointer-events-none">
+                    updated {buildDate}
+                </div>
+            )}
         </main>
     );
 }
