@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /brackets/{bracketId} {
+      // Public read access
+      allow read: if true;
+      
+      // Create: Must be auth'd and ownerId must match uid
+      allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
+      
+      // Update/Delete: Must be auth'd and be the owner
+      allow update, delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
+    }
+  }
+}
