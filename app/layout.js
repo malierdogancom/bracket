@@ -12,8 +12,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-    title: "Bracket Admin",
-    description: "Tournament Bracket Manager",
+    title: "Bracket — Event Organizer",
+    description: "Tournament bracket and team generator.",
 };
 
 export default function RootLayout({ children }) {
