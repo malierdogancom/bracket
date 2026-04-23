@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
-import { collection, query, orderBy, onSnapshot, where } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 
 export default function Home() {
     const [events, setEvents] = useState([]);
@@ -16,11 +16,12 @@ export default function Home() {
     useEffect(() => {
         const q = query(
             collection(db, 'brackets'),
-            where('isArchived', '==', false),
             orderBy('createdAt', 'desc')
         );
         const unsubscribe = onSnapshot(q, (querySnapshot) => {
-            const eventsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const eventsData = querySnapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(e => !e.isArchived);
             setEvents(eventsData);
             setLoading(false);
         }, (error) => {
