@@ -195,7 +195,7 @@ export default function Home() {
             </div>
             {buildDate && (
                 <div className="fixed bottom-2 right-3 text-xs text-gray-600 pointer-events-none">
-                    updated {buildDate}
+                    Son güncelleme: {buildDate}
                 </div>
             )}
         </main>
