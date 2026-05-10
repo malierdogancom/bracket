@@ -110,6 +110,13 @@ export default function Home() {
                                                     </span>
                                                     {match.winner === match.team2 && <span className="text-green-500">✓</span>}
                                                 </div>
+                                                {match.schedule && (
+                                                    <div className="mt-2 pt-2 border-t border-gray-700/50 flex items-center gap-1 flex-wrap text-xs">
+                                                        <span className="text-gray-500">{match.schedule.tarih}</span>
+                                                        <span className="text-yellow-400 font-mono">{match.schedule.saat}</span>
+                                                        <span className="bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">Masa {match.schedule.masa}</span>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* Connector Lines (Visual CSS hack) */}

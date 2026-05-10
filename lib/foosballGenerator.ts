@@ -159,3 +159,48 @@ const formatTeamName = (name1: string, name2: string): string => {
     };
     return `${getInitials(name1)} & ${getInitials(name2)}`;
 };
+
+export interface LangirtTeam {
+    name: string;
+    phones: { name: string; number: string }[];
+}
+
+// Parses the Langirt tournament CSV (pre-formed teams with two players each).
+// Handles Turkish column names like "1. Oyuncu Tel No (0 ile başlamalı)".
+export const parseLangirtCSV = (file: File): Promise<LangirtTeam[]> => {
+    return new Promise((resolve, reject) => {
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: (results) => {
+                const teams: LangirtTeam[] = [];
+
+                results.data.forEach((row: any) => {
+                    const teamName = row['Takımınızın Adı'] || row['Team Name'];
+                    if (!teamName?.trim()) return;
+
+                    // Match column by prefix to handle suffixes like "(0 ile başlamalı)"
+                    const findCol = (prefix: string): string | undefined => {
+                        if (row[prefix] !== undefined) return row[prefix];
+                        const key = Object.keys(row).find(k => k.startsWith(prefix));
+                        return key ? row[key] : undefined;
+                    };
+
+                    const p1Name = (row['1. Oyuncu İsim Soyisim'] || '').trim() || 'Oyuncu 1';
+                    const p2Name = (row['2. Oyuncu İsim Soyisim'] || '').trim() || 'Oyuncu 2';
+                    const p1Phone = findCol('1. Oyuncu Tel No');
+                    const p2Phone = findCol('2. Oyuncu Tel No');
+
+                    const phones: { name: string; number: string }[] = [];
+                    if (p1Phone) phones.push({ name: p1Name, number: p1Phone.toString().trim() });
+                    if (p2Phone) phones.push({ name: p2Name, number: p2Phone.toString().trim() });
+
+                    teams.push({ name: teamName.trim(), phones });
+                });
+
+                resolve(teams);
+            },
+            error: reject,
+        });
+    });
+};
