@@ -269,50 +269,58 @@ export default function Admin() {
 
     // --- Langirt Actions ---
 
+    const computeLangirtWarnings = (teams) => {
+        const tr = (s) => (s || '').toLocaleLowerCase('tr-TR').trim();
+        const warnings = [];
+
+        const teamNameMap = {};
+        teams.forEach(t => {
+            const key = tr(t.name);
+            if (!teamNameMap[key]) teamNameMap[key] = [];
+            teamNameMap[key].push(t.name);
+        });
+        Object.values(teamNameMap).forEach(names => {
+            if (names.length > 1)
+                warnings.push({ type: 'team', msg: `Aynı takım adı: "${names[0]}" — ${names.length} kez kayıtlı` });
+        });
+
+        const playerMap = {};
+        teams.forEach(t => {
+            t.phones.forEach(p => {
+                const key = tr(p.name);
+                if (!key || key.startsWith('oyuncu')) return;
+                if (!playerMap[key]) playerMap[key] = [];
+                playerMap[key].push({ player: p.name, team: t.name });
+            });
+        });
+        Object.values(playerMap).forEach(entries => {
+            if (entries.length > 1) {
+                const teamList = entries.map(e => `"${e.team}"`).join(', ');
+                warnings.push({ type: 'player', msg: `Aynı oyuncu birden fazla takımda: ${entries[0].player} → ${teamList}` });
+            }
+        });
+
+        return warnings;
+    };
+
     const handleParseLangirt = async () => {
         if (!langirtFile) { setMessage('Önce CSV dosyası seç.'); return; }
         try {
             const teams = await parseLangirtCSV(langirtFile);
             setLangirtTeams(teams);
             setLangirtPreview(null);
-
-            const tr = (s) => (s || '').toLocaleLowerCase('tr-TR').trim();
-            const warnings = [];
-
-            // Duplicate team names
-            const teamNameMap = {};
-            teams.forEach(t => {
-                const key = tr(t.name);
-                if (!teamNameMap[key]) teamNameMap[key] = [];
-                teamNameMap[key].push(t.name);
-            });
-            Object.values(teamNameMap).forEach(names => {
-                if (names.length > 1)
-                    warnings.push({ type: 'team', msg: `Aynı takım adı: "${names[0]}" — ${names.length} kez kayıtlı` });
-            });
-
-            // Duplicate player names across different teams
-            const playerMap = {};
-            teams.forEach(t => {
-                t.phones.forEach(p => {
-                    const key = tr(p.name);
-                    if (!key || key.startsWith('oyuncu')) return; // skip generic placeholders
-                    if (!playerMap[key]) playerMap[key] = [];
-                    playerMap[key].push({ player: p.name, team: t.name });
-                });
-            });
-            Object.values(playerMap).forEach(entries => {
-                if (entries.length > 1) {
-                    const teamList = entries.map(e => `"${e.team}"`).join(', ');
-                    warnings.push({ type: 'player', msg: `Aynı oyuncu birden fazla takımda: ${entries[0].player} → ${teamList}` });
-                }
-            });
-
-            setLangirtWarnings(warnings);
+            setLangirtWarnings(computeLangirtWarnings(teams));
             setMessage(`${teams.length} takım yüklendi.`);
         } catch (err) {
             setMessage('CSV okuma hatası: ' + err.message);
         }
+    };
+
+    const handleRemoveLangirtTeam = (idx) => {
+        const updated = langirtTeams.filter((_, i) => i !== idx);
+        setLangirtTeams(updated);
+        setLangirtWarnings(computeLangirtWarnings(updated));
+        setLangirtPreview(null);
     };
 
     const handleGenerateLangirtSchedule = () => {
@@ -778,9 +786,14 @@ export default function Admin() {
 
                                                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
                                                         {langirtTeams.map((t, i) => (
-                                                            <div key={i} className="bg-gray-700 px-3 py-2 rounded text-xs flex items-center gap-1">
+                                                            <div key={i} className="bg-gray-700 px-3 py-2 rounded text-xs flex items-center gap-1 group/team">
                                                                 <span className="flex-1 truncate">{t.name}</span>
                                                                 {t.phones.length > 0 && <Phone size={10} className="text-green-400 shrink-0" />}
+                                                                <button
+                                                                    onClick={() => handleRemoveLangirtTeam(i)}
+                                                                    className="ml-1 text-gray-600 hover:text-red-400 opacity-0 group-hover/team:opacity-100 transition-opacity shrink-0"
+                                                                    title="Listeden çıkar"
+                                                                >✕</button>
                                                             </div>
                                                         ))}
                                                     </div>
