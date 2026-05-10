@@ -284,7 +284,7 @@ export default function Admin() {
         if (langirtTeams.length < 2) { setMessage('En az 2 takım gerekli.'); return; }
         const invalidDays = langirtConfig.gunler.some(g => !g.tarih);
         if (invalidDays) { setMessage('Tüm günler için tarih gir.'); return; }
-        const names = langirtTeams.map(t => t.name);
+        const names = _.shuffle(langirtTeams.map(t => t.name));
         const rounds = generateBracket(names);
         const scheduledRounds = generateSchedule(rounds, langirtConfig);
         setLangirtPreview({ rounds: scheduledRounds });
