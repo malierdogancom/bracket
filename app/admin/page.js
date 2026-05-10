@@ -55,6 +55,7 @@ export default function Admin() {
     const [langirtConfig, setLangirtConfig] = useState(DEFAULT_LANGIRT_CONFIG);
     const [langirtName, setLangirtName] = useState('Langırt Turnuvası');
     const [langirtPreview, setLangirtPreview] = useState(null);
+    const [langirtWarnings, setLangirtWarnings] = useState([]);
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -274,6 +275,40 @@ export default function Admin() {
             const teams = await parseLangirtCSV(langirtFile);
             setLangirtTeams(teams);
             setLangirtPreview(null);
+
+            const tr = (s) => (s || '').toLocaleLowerCase('tr-TR').trim();
+            const warnings = [];
+
+            // Duplicate team names
+            const teamNameMap = {};
+            teams.forEach(t => {
+                const key = tr(t.name);
+                if (!teamNameMap[key]) teamNameMap[key] = [];
+                teamNameMap[key].push(t.name);
+            });
+            Object.values(teamNameMap).forEach(names => {
+                if (names.length > 1)
+                    warnings.push({ type: 'team', msg: `Aynı takım adı: "${names[0]}" — ${names.length} kez kayıtlı` });
+            });
+
+            // Duplicate player names across different teams
+            const playerMap = {};
+            teams.forEach(t => {
+                t.phones.forEach(p => {
+                    const key = tr(p.name);
+                    if (!key || key.startsWith('oyuncu')) return; // skip generic placeholders
+                    if (!playerMap[key]) playerMap[key] = [];
+                    playerMap[key].push({ player: p.name, team: t.name });
+                });
+            });
+            Object.values(playerMap).forEach(entries => {
+                if (entries.length > 1) {
+                    const teamList = entries.map(e => `"${e.team}"`).join(', ');
+                    warnings.push({ type: 'player', msg: `Aynı oyuncu birden fazla takımda: ${entries[0].player} → ${teamList}` });
+                }
+            });
+
+            setLangirtWarnings(warnings);
             setMessage(`${teams.length} takım yüklendi.`);
         } catch (err) {
             setMessage('CSV okuma hatası: ' + err.message);
@@ -713,7 +748,7 @@ export default function Admin() {
                                                     <input
                                                         type="file"
                                                         accept=".csv"
-                                                        onChange={(e) => { setLangirtFile(e.target.files[0]); setLangirtTeams([]); setLangirtPreview(null); }}
+                                                        onChange={(e) => { setLangirtFile(e.target.files[0]); setLangirtTeams([]); setLangirtPreview(null); setLangirtWarnings([]); }}
                                                         className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-900 file:text-orange-200 hover:file:bg-orange-800"
                                                     />
                                                     <p className="text-xs text-gray-500 mt-1">Langırt form CSV (Takımınızın Adı, Oyuncu Tel No...)</p>
@@ -728,8 +763,19 @@ export default function Admin() {
                                             </div>
 
                                             {langirtTeams.length > 0 && (
-                                                <div>
-                                                    <p className="text-sm text-green-400 mb-2">✓ {langirtTeams.length} takım yüklendi</p>
+                                                <div className="space-y-3">
+                                                    <p className="text-sm text-green-400">✓ {langirtTeams.length} takım yüklendi</p>
+
+                                                    {/* Duplicate warnings */}
+                                                    {langirtWarnings.length > 0 && (
+                                                        <div className="bg-yellow-900/30 border border-yellow-600/50 rounded-lg p-3 space-y-1">
+                                                            <p className="text-xs font-semibold text-yellow-400 mb-1">⚠ {langirtWarnings.length} uyarı bulundu</p>
+                                                            {langirtWarnings.map((w, i) => (
+                                                                <p key={i} className="text-xs text-yellow-300">{w.msg}</p>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
                                                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
                                                         {langirtTeams.map((t, i) => (
                                                             <div key={i} className="bg-gray-700 px-3 py-2 rounded text-xs flex items-center gap-1">
