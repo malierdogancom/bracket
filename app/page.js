@@ -74,18 +74,17 @@ export default function Home() {
 
     const renderTournament = (event) => {
         const rounds = event.data.rounds;
-        const searchLower = searchTeam.toLowerCase().trim();
+        // Turkish-aware case-insensitive comparison (handles İ→i, I→ı etc.)
+        const tr = (s) => (s || '').toLocaleLowerCase('tr-TR');
+        const searchLower = tr(searchTeam).trim();
 
-        // Collect all matches where the searched team plays
+        // Collect all matches (including completed) where the searched team plays
         const teamMatches = [];
         if (searchLower) {
             rounds.forEach((round, rIdx) => {
                 round.matches.forEach((match) => {
-                    const t1 = match.team1?.toLowerCase() || '';
-                    const t2 = match.team2?.toLowerCase() || '';
-                    if (t1.includes(searchLower) || t2.includes(searchLower)) {
-                        // Skip BYE matches
-                        if (match.team1 === 'BAY' || match.team2 === 'BAY') return;
+                    if (match.team1 === 'BAY' || match.team2 === 'BAY') return;
+                    if (tr(match.team1).includes(searchLower) || tr(match.team2).includes(searchLower)) {
                         teamMatches.push({ match, roundIdx: rIdx });
                     }
                 });
@@ -100,8 +99,7 @@ export default function Home() {
 
         const matchContainsSearch = (match) => {
             if (!searchLower) return false;
-            return (match.team1?.toLowerCase().includes(searchLower)) ||
-                   (match.team2?.toLowerCase().includes(searchLower));
+            return tr(match.team1).includes(searchLower) || tr(match.team2).includes(searchLower);
         };
 
         const shouldDim = (match) => searchLower && !matchContainsSearch(match);
@@ -146,20 +144,23 @@ export default function Home() {
                                 </p>
                                 <div className="space-y-2">
                                     {teamMatches.map(({ match, roundIdx }, i) => {
-                                        const opponent = match.team1?.toLowerCase().includes(searchLower) ? match.team2 : match.team1;
+                                        const myTeam = tr(match.team1).includes(searchLower) ? match.team1 : match.team2;
+                                        const opponent = myTeam === match.team1 ? match.team2 : match.team1;
+                                        const won = match.winner && match.winner === myTeam;
+                                        const lost = match.winner && match.winner !== myTeam;
                                         return (
                                             <div key={i} className="flex items-center gap-3 text-sm flex-wrap">
                                                 <span className="text-gray-400 text-xs w-20 shrink-0">{roundLabel(roundIdx)}</span>
                                                 <span className="text-gray-300">vs <strong className="text-white">{opponent || 'TBD'}</strong></span>
+                                                {won && <span className="text-green-400 text-xs font-semibold">Kazandı ✓</span>}
+                                                {lost && <span className="text-red-400 text-xs">Kaybetti</span>}
                                                 {match.schedule ? (
                                                     <div className="flex items-center gap-1.5 ml-auto text-xs">
                                                         <span className="text-gray-400">{match.schedule.tarih}</span>
                                                         <span className="text-yellow-400 font-mono font-bold">{match.schedule.saat}</span>
                                                         <span className="bg-gray-700 text-gray-200 px-2 py-0.5 rounded">Masa {match.schedule.masa}</span>
                                                     </div>
-                                                ) : match.winner ? (
-                                                    <span className="ml-auto text-xs text-gray-500">Tamamlandı</span>
-                                                ) : (
+                                                ) : !match.winner && (
                                                     <span className="ml-auto text-xs text-gray-600">Program bekleniyor</span>
                                                 )}
                                             </div>
@@ -196,7 +197,7 @@ export default function Home() {
                                                     <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-700/50">
                                                         <span className={`
                                                             ${match.winner === match.team1 ? 'text-green-400 font-bold' :
-                                                              highlighted && match.team1?.toLowerCase().includes(searchLower) ? 'text-yellow-300 font-semibold' :
+                                                              highlighted && tr(match.team1).includes(searchLower) ? 'text-yellow-300 font-semibold' :
                                                               'text-gray-300'}
                                                         `}>
                                                             {match.team1 || 'TBD'}
@@ -206,7 +207,7 @@ export default function Home() {
                                                     <div className="flex justify-between items-center">
                                                         <span className={`
                                                             ${match.winner === match.team2 ? 'text-green-400 font-bold' :
-                                                              highlighted && match.team2?.toLowerCase().includes(searchLower) ? 'text-yellow-300 font-semibold' :
+                                                              highlighted && tr(match.team2).includes(searchLower) ? 'text-yellow-300 font-semibold' :
                                                               'text-gray-300'}
                                                         `}>
                                                             {match.team2 || 'TBD'}
