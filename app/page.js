@@ -1,20 +1,241 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+
+function TournamentView({ event }) {
+    const rounds = event.data.rounds;
+    const containerRef = useRef(null);
+    const matchRefs = useRef({});
+    const [connectors, setConnectors] = useState([]);
+    const [searchTeam, setSearchTeam] = useState('');
+
+    const tr = (s) => (s || '').toLocaleLowerCase('tr-TR');
+    const searchLower = tr(searchTeam).trim();
+
+    // Reset search when event changes
+    useEffect(() => { setSearchTeam(''); }, [event.id]);
+
+    const calcConnectors = useCallback(() => {
+        const container = containerRef.current;
+        if (!container) return;
+        const cr = container.getBoundingClientRect();
+        const result = [];
+
+        rounds.forEach((round, rIdx) => {
+            if (rIdx >= rounds.length - 1) return;
+            round.matches.forEach((match, mIdx) => {
+                const el = matchRefs.current[`${rIdx}-${mIdx}`];
+                if (!el) return;
+                const r = el.getBoundingClientRect();
+                const x1 = r.right - cr.left;
+                const y1 = r.top + r.height / 2 - cr.top;
+
+                const nextEl = matchRefs.current[`${rIdx + 1}-${Math.floor(mIdx / 2)}`];
+                if (!nextEl) return;
+                const nr = nextEl.getBoundingClientRect();
+                const x2 = nr.left - cr.left;
+                const y2 = nr.top + nr.height / 2 - cr.top;
+
+                const midX = (x1 + x2) / 2;
+                result.push({
+                    d: `M${x1},${y1} H${midX} V${y2} H${x2}`,
+                    winner: match.winner,
+                });
+            });
+        });
+        setConnectors(result);
+    }, [rounds]);
+
+    useLayoutEffect(() => {
+        calcConnectors();
+        window.addEventListener('resize', calcConnectors);
+        return () => window.removeEventListener('resize', calcConnectors);
+    }, [calcConnectors]);
+
+    const teamMatches = [];
+    if (searchLower) {
+        rounds.forEach((round, rIdx) => {
+            round.matches.forEach((match) => {
+                if (match.team1 === 'BAY' || match.team2 === 'BAY') return;
+                if (tr(match.team1).includes(searchLower) || tr(match.team2).includes(searchLower)) {
+                    teamMatches.push({ match, roundIdx: rIdx });
+                }
+            });
+        });
+    }
+
+    const roundLabel = (rIdx) => {
+        if (rIdx === rounds.length - 1) return 'Final';
+        if (rIdx === rounds.length - 2) return 'Yarı Final';
+        return `Tur ${rIdx + 1}`;
+    };
+
+    const matchContainsSearch = (match) => {
+        if (!searchLower) return false;
+        return tr(match.team1).includes(searchLower) || tr(match.team2).includes(searchLower);
+    };
+
+    const shouldDim = (match) => searchLower && !matchContainsSearch(match);
+
+    return (
+        <div className="flex flex-col h-full">
+            <h2 className="text-4xl font-bold text-center mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
+                {event.name}
+            </h2>
+
+            {/* Team Search */}
+            <div className="max-w-md mx-auto w-full mb-6 px-4">
+                <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">🔍</span>
+                    <input
+                        type="text"
+                        value={searchTeam}
+                        onChange={(e) => setSearchTeam(e.target.value)}
+                        placeholder="Takımını ara..."
+                        className="w-full pl-9 pr-8 py-2.5 rounded-lg bg-gray-800 border border-gray-600 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 text-sm transition"
+                    />
+                    {searchTeam && (
+                        <button
+                            onClick={() => setSearchTeam('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                        >✕</button>
+                    )}
+                </div>
+            </div>
+
+            {/* Search Results Summary */}
+            {searchLower && (
+                <div className="max-w-2xl mx-auto w-full mb-6 px-4">
+                    {teamMatches.length === 0 ? (
+                        <p className="text-center text-gray-500 text-sm">"{searchTeam}" adında takım bulunamadı.</p>
+                    ) : (
+                        <div className="bg-blue-950/50 border border-blue-700/40 rounded-xl p-4">
+                            <p className="text-blue-300 font-semibold text-sm mb-3">
+                                {tr(teamMatches[0].match.team1).includes(searchLower)
+                                    ? teamMatches[0].match.team1
+                                    : teamMatches[0].match.team2} — maç programı
+                            </p>
+                            <div className="space-y-2">
+                                {teamMatches.map(({ match, roundIdx }, i) => {
+                                    const myTeam = tr(match.team1).includes(searchLower) ? match.team1 : match.team2;
+                                    const opponent = myTeam === match.team1 ? match.team2 : match.team1;
+                                    const won = match.winner && match.winner === myTeam;
+                                    const lost = match.winner && match.winner !== myTeam;
+                                    return (
+                                        <div key={i} className="flex items-center gap-3 text-sm flex-wrap">
+                                            <span className="text-gray-400 text-xs w-20 shrink-0">{roundLabel(roundIdx)}</span>
+                                            <span className="text-gray-300">vs <strong className="text-white">{opponent || 'TBD'}</strong></span>
+                                            {won && <span className="text-green-400 text-xs font-semibold">Kazandı ✓</span>}
+                                            {lost && <span className="text-red-400 text-xs">Kaybetti</span>}
+                                            {match.schedule ? (
+                                                <div className="flex items-center gap-1.5 ml-auto text-xs">
+                                                    <span className="text-gray-400">{match.schedule.tarih}</span>
+                                                    <span className="text-yellow-400 font-mono font-bold">{match.schedule.saat}</span>
+                                                    <span className="bg-gray-700 text-gray-200 px-2 py-0.5 rounded">Masa {match.schedule.masa}</span>
+                                                </div>
+                                            ) : !match.winner && (
+                                                <span className="ml-auto text-xs text-gray-600">Program bekleniyor</span>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Bracket */}
+            <div className="flex-1 overflow-x-auto pb-12">
+                <div ref={containerRef} className="relative flex justify-center min-w-max px-8 space-x-16">
+                    {/* SVG connector lines overlay */}
+                    <svg
+                        className="absolute inset-0 pointer-events-none"
+                        style={{ width: '100%', height: '100%', overflow: 'visible' }}
+                    >
+                        {connectors.map((c, i) => (
+                            <path
+                                key={i}
+                                d={c.d}
+                                fill="none"
+                                stroke={c.winner ? '#22c55e' : '#4b5563'}
+                                strokeWidth={c.winner ? 2 : 1.5}
+                                opacity={c.winner ? 0.9 : 0.45}
+                            />
+                        ))}
+                    </svg>
+
+                    {rounds.map((round, roundIdx) => (
+                        <div key={roundIdx} className="flex flex-col justify-around">
+                            <div className="text-center mb-4 text-gray-500 font-mono text-sm uppercase tracking-widest">
+                                {roundIdx === rounds.length - 1 ? 'Final' :
+                                    roundIdx === rounds.length - 2 ? 'Semi-Finals' :
+                                        `Round ${roundIdx + 1}`}
+                            </div>
+                            <div className="flex flex-col justify-around h-full space-y-8">
+                                {round.matches.map((match, matchIdx) => {
+                                    const highlighted = matchContainsSearch(match);
+                                    const dimmed = shouldDim(match);
+                                    return (
+                                        <div
+                                            key={matchIdx}
+                                            ref={el => { matchRefs.current[`${roundIdx}-${matchIdx}`] = el; }}
+                                            className={`relative group transition-opacity duration-200 ${dimmed ? 'opacity-20' : 'opacity-100'}`}
+                                        >
+                                            <div className={`w-56 bg-gray-800 border rounded-lg p-3 shadow-lg transition-all
+                                                ${highlighted ? 'border-yellow-400 shadow-yellow-400/20 shadow-md' :
+                                                  match.winner ? 'border-blue-500/50' : 'border-gray-700'}
+                                                ${!dimmed ? 'hover:border-blue-500' : ''}
+                                            `}>
+                                                <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-700/50">
+                                                    <span className={`
+                                                        ${match.winner === match.team1 ? 'text-green-400 font-bold' :
+                                                          highlighted && tr(match.team1).includes(searchLower) ? 'text-yellow-300 font-semibold' :
+                                                          'text-gray-300'}
+                                                    `}>
+                                                        {match.team1 || 'TBD'}
+                                                    </span>
+                                                    {match.winner === match.team1 && <span className="text-green-500">✓</span>}
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span className={`
+                                                        ${match.winner === match.team2 ? 'text-green-400 font-bold' :
+                                                          highlighted && tr(match.team2).includes(searchLower) ? 'text-yellow-300 font-semibold' :
+                                                          'text-gray-300'}
+                                                    `}>
+                                                        {match.team2 || 'TBD'}
+                                                    </span>
+                                                    {match.winner === match.team2 && <span className="text-green-500">✓</span>}
+                                                </div>
+                                                {match.schedule && (
+                                                    <div className="mt-2 pt-2 border-t border-gray-700/50 flex items-center gap-1 flex-wrap text-xs">
+                                                        <span className="text-gray-500">{match.schedule.tarih}</span>
+                                                        <span className="text-yellow-400 font-mono">{match.schedule.saat}</span>
+                                                        <span className="bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">Masa {match.schedule.masa}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
 
 export default function Home() {
     const [events, setEvents] = useState([]);
     const [selectedEventId, setSelectedEventId] = useState(null);
     const [loading, setLoading] = useState(true);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [searchTeam, setSearchTeam] = useState('');
 
     const selectedEvent = events.find(e => e.id === selectedEventId) || events[0] || null;
-
-    // Clear search when switching events
-    useEffect(() => { setSearchTeam(''); }, [selectedEventId]);
 
     useEffect(() => {
         const q = query(collection(db, 'brackets'), orderBy('createdAt', 'desc'));
@@ -45,8 +266,6 @@ export default function Home() {
         </div>
     );
 
-    // --- Renderers ---
-
     const renderTeams = (event) => (
         <div className="max-w-6xl mx-auto">
             <h2 className="text-3xl font-bold text-center mb-12 text-purple-400">Team Generator Results</h2>
@@ -71,172 +290,6 @@ export default function Home() {
             </div>
         </div>
     );
-
-    const renderTournament = (event) => {
-        const rounds = event.data.rounds;
-        // Turkish-aware case-insensitive comparison (handles İ→i, I→ı etc.)
-        const tr = (s) => (s || '').toLocaleLowerCase('tr-TR');
-        const searchLower = tr(searchTeam).trim();
-
-        // Collect all matches (including completed) where the searched team plays
-        const teamMatches = [];
-        if (searchLower) {
-            rounds.forEach((round, rIdx) => {
-                round.matches.forEach((match) => {
-                    if (match.team1 === 'BAY' || match.team2 === 'BAY') return;
-                    if (tr(match.team1).includes(searchLower) || tr(match.team2).includes(searchLower)) {
-                        teamMatches.push({ match, roundIdx: rIdx });
-                    }
-                });
-            });
-        }
-
-        const roundLabel = (rIdx) => {
-            if (rIdx === rounds.length - 1) return 'Final';
-            if (rIdx === rounds.length - 2) return 'Yarı Final';
-            return `Tur ${rIdx + 1}`;
-        };
-
-        const matchContainsSearch = (match) => {
-            if (!searchLower) return false;
-            return tr(match.team1).includes(searchLower) || tr(match.team2).includes(searchLower);
-        };
-
-        const shouldDim = (match) => searchLower && !matchContainsSearch(match);
-
-        return (
-            <div className="flex flex-col h-full">
-                <h2 className="text-4xl font-bold text-center mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
-                    {event.name}
-                </h2>
-
-                {/* Team Search */}
-                <div className="max-w-md mx-auto w-full mb-6 px-4">
-                    <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">🔍</span>
-                        <input
-                            type="text"
-                            value={searchTeam}
-                            onChange={(e) => setSearchTeam(e.target.value)}
-                            placeholder="Takımını ara..."
-                            className="w-full pl-9 pr-8 py-2.5 rounded-lg bg-gray-800 border border-gray-600 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 text-sm transition"
-                        />
-                        {searchTeam && (
-                            <button
-                                onClick={() => setSearchTeam('')}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
-                            >✕</button>
-                        )}
-                    </div>
-                </div>
-
-                {/* Search Results Summary */}
-                {searchLower && (
-                    <div className="max-w-2xl mx-auto w-full mb-6 px-4">
-                        {teamMatches.length === 0 ? (
-                            <p className="text-center text-gray-500 text-sm">"{searchTeam}" adında takım bulunamadı.</p>
-                        ) : (
-                            <div className="bg-blue-950/50 border border-blue-700/40 rounded-xl p-4">
-                                <p className="text-blue-300 font-semibold text-sm mb-3">
-                                    {teamMatches[0].match.team1?.toLowerCase().includes(searchLower)
-                                        ? teamMatches[0].match.team1
-                                        : teamMatches[0].match.team2} — maç programı
-                                </p>
-                                <div className="space-y-2">
-                                    {teamMatches.map(({ match, roundIdx }, i) => {
-                                        const myTeam = tr(match.team1).includes(searchLower) ? match.team1 : match.team2;
-                                        const opponent = myTeam === match.team1 ? match.team2 : match.team1;
-                                        const won = match.winner && match.winner === myTeam;
-                                        const lost = match.winner && match.winner !== myTeam;
-                                        return (
-                                            <div key={i} className="flex items-center gap-3 text-sm flex-wrap">
-                                                <span className="text-gray-400 text-xs w-20 shrink-0">{roundLabel(roundIdx)}</span>
-                                                <span className="text-gray-300">vs <strong className="text-white">{opponent || 'TBD'}</strong></span>
-                                                {won && <span className="text-green-400 text-xs font-semibold">Kazandı ✓</span>}
-                                                {lost && <span className="text-red-400 text-xs">Kaybetti</span>}
-                                                {match.schedule ? (
-                                                    <div className="flex items-center gap-1.5 ml-auto text-xs">
-                                                        <span className="text-gray-400">{match.schedule.tarih}</span>
-                                                        <span className="text-yellow-400 font-mono font-bold">{match.schedule.saat}</span>
-                                                        <span className="bg-gray-700 text-gray-200 px-2 py-0.5 rounded">Masa {match.schedule.masa}</span>
-                                                    </div>
-                                                ) : !match.winner && (
-                                                    <span className="ml-auto text-xs text-gray-600">Program bekleniyor</span>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* Bracket */}
-                <div className="flex-1 overflow-x-auto pb-12">
-                    <div className="flex justify-center min-w-max px-8 space-x-16">
-                        {rounds.map((round, roundIdx) => (
-                            <div key={roundIdx} className="flex flex-col justify-around">
-                                <div className="text-center mb-4 text-gray-500 font-mono text-sm uppercase tracking-widest">
-                                    {roundIdx === rounds.length - 1 ? 'Final' :
-                                        roundIdx === rounds.length - 2 ? 'Semi-Finals' :
-                                            `Round ${roundIdx + 1}`}
-                                </div>
-
-                                <div className="flex flex-col justify-around h-full space-y-8">
-                                    {round.matches.map((match, matchIdx) => {
-                                        const highlighted = matchContainsSearch(match);
-                                        const dimmed = shouldDim(match);
-                                        return (
-                                            <div key={matchIdx} className={`relative group transition-opacity duration-200 ${dimmed ? 'opacity-20' : 'opacity-100'}`}>
-                                                <div className={`w-56 bg-gray-800 border rounded-lg p-3 shadow-lg transition-all
-                                                    ${highlighted ? 'border-yellow-400 shadow-yellow-400/20 shadow-md' :
-                                                      match.winner ? 'border-blue-500/50' : 'border-gray-700'}
-                                                    ${!dimmed ? 'hover:border-blue-500' : ''}
-                                                `}>
-                                                    <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-700/50">
-                                                        <span className={`
-                                                            ${match.winner === match.team1 ? 'text-green-400 font-bold' :
-                                                              highlighted && tr(match.team1).includes(searchLower) ? 'text-yellow-300 font-semibold' :
-                                                              'text-gray-300'}
-                                                        `}>
-                                                            {match.team1 || 'TBD'}
-                                                        </span>
-                                                        {match.winner === match.team1 && <span className="text-green-500">✓</span>}
-                                                    </div>
-                                                    <div className="flex justify-between items-center">
-                                                        <span className={`
-                                                            ${match.winner === match.team2 ? 'text-green-400 font-bold' :
-                                                              highlighted && tr(match.team2).includes(searchLower) ? 'text-yellow-300 font-semibold' :
-                                                              'text-gray-300'}
-                                                        `}>
-                                                            {match.team2 || 'TBD'}
-                                                        </span>
-                                                        {match.winner === match.team2 && <span className="text-green-500">✓</span>}
-                                                    </div>
-                                                    {match.schedule && (
-                                                        <div className="mt-2 pt-2 border-t border-gray-700/50 flex items-center gap-1 flex-wrap text-xs">
-                                                            <span className="text-gray-500">{match.schedule.tarih}</span>
-                                                            <span className="text-yellow-400 font-mono">{match.schedule.saat}</span>
-                                                            <span className="bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">Masa {match.schedule.masa}</span>
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                {roundIdx < rounds.length - 1 && (
-                                                    <div className="absolute top-1/2 -right-8 w-8 h-px bg-gray-700 hidden md:block"></div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        );
-    };
 
     const buildDate = process.env.NEXT_PUBLIC_BUILD_DATE
         ? new Date(process.env.NEXT_PUBLIC_BUILD_DATE).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -299,7 +352,9 @@ export default function Home() {
                 {/* Main Content Area */}
                 <div className="flex-1 overflow-auto p-8">
                     {selectedEvent && (
-                        selectedEvent.type === 'teams' ? renderTeams(selectedEvent) : renderTournament(selectedEvent)
+                        selectedEvent.type === 'teams'
+                            ? renderTeams(selectedEvent)
+                            : <TournamentView key={selectedEvent.id} event={selectedEvent} />
                     )}
                 </div>
             </div>
