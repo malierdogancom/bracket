@@ -1,8 +1,6 @@
 'use client';
 import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { db } from '@/lib/firebase';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 
 function TournamentView({ event }) {
     const rounds = event.data.rounds;
@@ -238,18 +236,20 @@ export default function Home() {
     const selectedEvent = events.find(e => e.id === selectedEventId) || events[0] || null;
 
     useEffect(() => {
-        const q = query(collection(db, 'brackets'), orderBy('createdAt', 'desc'));
-        const unsubscribe = onSnapshot(q, (querySnapshot) => {
-            const eventsData = querySnapshot.docs
-                .map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter(e => !e.isArchived);
-            setEvents(eventsData);
-            setLoading(false);
-        }, (error) => {
-            console.error("Error fetching events:", error);
-            setLoading(false);
-        });
-        return () => unsubscribe();
+        const fetchEvents = async () => {
+            try {
+                const res = await fetch('/api/brackets');
+                const data = await res.json();
+                setEvents(data.filter(e => !e.isArchived));
+            } catch (err) {
+                console.error('Error fetching events:', err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchEvents();
+        const interval = setInterval(fetchEvents, 30000);
+        return () => clearInterval(interval);
     }, []);
 
     if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">Loading Events...</div>;

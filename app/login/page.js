@@ -1,7 +1,5 @@
 'use client';
 import { useState } from 'react';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 
 export default function Login() {
@@ -13,11 +11,15 @@ export default function Login() {
     const handleLogin = async (e) => {
         e.preventDefault();
         try {
-            await signInWithEmailAndPassword(auth, email, password);
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password }),
+            });
+            if (!res.ok) throw new Error('Invalid credentials');
             router.push('/admin');
         } catch (err) {
             setError('Failed to login. Check credentials.');
-            console.error(err);
         }
     };
 

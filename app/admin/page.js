@@ -1,9 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { auth, db } from '@/lib/firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
-import { collection, addDoc, serverTimestamp, updateDoc, doc, query, orderBy, getDocs, deleteDoc, where } from 'firebase/firestore';
 import { generateBracket } from '@/lib/tournament';
 import { generateTeams } from '@/lib/teams';
 import { parseFoosballCSV, generateBalancedSquads, parseLangirtCSV } from '@/lib/foosballGenerator';
@@ -19,7 +16,6 @@ const DEFAULT_LANGIRT_CONFIG = {
 };
 
 export default function Admin() {
-    const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -58,35 +54,26 @@ export default function Admin() {
     const [langirtWarnings, setLangirtWarnings] = useState([]);
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-            if (!currentUser) {
-                router.push('/login');
-            } else {
-                setUser(currentUser);
-                fetchEvents(currentUser.uid);
-            }
-            setLoading(false);
+        fetch('/api/auth/me').then(r => {
+            if (!r.ok) router.push('/login');
+            else { fetchEvents(); setLoading(false); }
         });
-        return () => unsubscribe();
     }, [router]);
 
-    const fetchEvents = async (uid = user?.uid) => {
-        if (!uid) return;
+    const fetchEvents = async () => {
         try {
-            const q = query(
-                collection(db, 'brackets'),
-                where('ownerId', '==', uid),
-                orderBy('createdAt', 'desc')
-            );
-            const querySnapshot = await getDocs(q);
-            const eventsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setEvents(eventsData);
+            const res = await fetch('/api/brackets');
+            const data = await res.json();
+            setEvents(data);
         } catch (error) {
-            console.error("Error fetching events:", error);
+            console.error('Error fetching events:', error);
         }
     };
 
-    const handleLogout = () => signOut(auth);
+    const handleLogout = async () => {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        router.push('/login');
+    };
 
     // --- Tournament Actions ---
 
@@ -100,23 +87,16 @@ export default function Admin() {
         const rounds = generateBracket(participants);
 
         try {
-            const docRef = await addDoc(collection(db, 'brackets'), {
-                type: 'tournament',
-                name: tournamentName,
-                ownerId: user.uid,
-                isArchived: false,
-                createdAt: serverTimestamp(),
-                config: { participantCount: participants.length },
-                data: { rounds, teamMetadata }
-            });
+            const res = await fetch('/api/brackets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'tournament', name: tournamentName, config: { participantCount: participants.length }, data: { rounds, teamMetadata } }) });
+            const { id } = await res.json();
             setMessage('Tournament created successfully!');
-            setActiveTournament({ id: docRef.id, name: tournamentName, data: { rounds, teamMetadata } });
+            setActiveTournament({ id, name: tournamentName, data: { rounds, teamMetadata } });
             setTournamentName('');
             setNamesInput('');
             setTeamMetadata({});
             fetchEvents();
         } catch (error) {
-            console.error("Error creating tournament:", error);
+            console.error('Error creating tournament:', error);
             setMessage('Error creating tournament.');
         }
     };
@@ -143,7 +123,7 @@ export default function Admin() {
         setActiveTournament({ ...activeTournament, data: { ...activeTournament.data, rounds: newRoundsDeep } });
 
         try {
-            await updateDoc(doc(db, 'brackets', activeTournament.id), { 'data.rounds': newRoundsDeep });
+            await fetch(`/api/brackets/${activeTournament.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ 'data.rounds': newRoundsDeep }) });
             fetchEvents();
         } catch (err) {
             console.error('Error updating bracket:', err);
@@ -175,7 +155,7 @@ export default function Admin() {
         setActiveTournament({ ...activeTournament, data: { ...activeTournament.data, rounds: newRoundsDeep } });
 
         try {
-            await updateDoc(doc(db, 'brackets', activeTournament.id), { 'data.rounds': newRoundsDeep });
+            await fetch(`/api/brackets/${activeTournament.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ 'data.rounds': newRoundsDeep }) });
         } catch (err) {
             console.error('Error resetting match:', err);
             setMessage('Error resetting match.');
@@ -198,14 +178,7 @@ export default function Admin() {
     const handleSaveTeams = async () => {
         if (!generatedTeams) return;
         try {
-            await addDoc(collection(db, 'brackets'), {
-                type: 'teams',
-                ownerId: user.uid,
-                isArchived: false,
-                createdAt: serverTimestamp(),
-                config: { numTeams },
-                data: { teams: generatedTeams }
-            });
+            await fetch('/api/brackets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'teams', config: { numTeams }, data: { teams: generatedTeams } }) });
             setMessage('Teams saved successfully!');
             setGeneratedTeams(null);
             setNamesInput('');
@@ -341,22 +314,11 @@ export default function Admin() {
             if (t.phones && t.phones.length > 0) metadata[t.name] = t.phones;
         });
         try {
-            const docRef = await addDoc(collection(db, 'brackets'), {
-                type: 'tournament',
-                name: langirtName.trim(),
-                ownerId: user.uid,
-                isArchived: false,
-                createdAt: serverTimestamp(),
-                config: {
-                    participantCount: langirtTeams.length,
-                    tournamentType: 'langirt',
-                    schedule: langirtConfig,
-                },
-                data: { rounds: langirtPreview.rounds, teamMetadata: metadata }
-            });
+            const res = await fetch('/api/brackets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'tournament', name: langirtName.trim(), config: { participantCount: langirtTeams.length, tournamentType: 'langirt', schedule: langirtConfig }, data: { rounds: langirtPreview.rounds, teamMetadata: metadata } }) });
+            const { id: newId } = await res.json();
             setMessage('Langırt turnuvası oluşturuldu!');
             setActiveTournament({
-                id: docRef.id,
+                id: newId,
                 name: langirtName.trim(),
                 config: { tournamentType: 'langirt', schedule: langirtConfig },
                 data: { rounds: langirtPreview.rounds, teamMetadata: metadata }
@@ -384,7 +346,7 @@ export default function Admin() {
     const handleDeleteEvent = async (id) => {
         if (!confirm('Bu etkinliği silmek istediğine emin misin?')) return;
         try {
-            await deleteDoc(doc(db, 'brackets', id));
+            await fetch(`/api/brackets/${id}`, { method: 'DELETE' });
             setMessage('Etkinlik silindi.');
             if (activeTournament?.id === id) setActiveTournament(null);
             fetchEvents();
@@ -395,7 +357,7 @@ export default function Admin() {
 
     const handleToggleArchive = async (event) => {
         try {
-            await updateDoc(doc(db, 'brackets', event.id), { isArchived: !event.isArchived });
+            await fetch(`/api/brackets/${event.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isArchived: !event.isArchived }) });
             setMessage(event.isArchived ? 'Event unarchived.' : 'Event archived.');
             fetchEvents();
         } catch (error) {
